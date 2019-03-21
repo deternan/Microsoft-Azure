@@ -5,9 +5,11 @@ package speechsdk.quickstart;
 //Licensed under the MIT license. See LICENSE.md file in the project root for full license information.
 //
 import java.io.IOException;
-import java.util.ArrayList;
+import java.io.OutputStreamWriter;
+import java.io.UnsupportedEncodingException;
 import java.util.Map;
 import java.util.Scanner;
+import java.util.Vector;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Semaphore;
 import javax.sound.sampled.AudioFormat;
@@ -17,20 +19,25 @@ import javax.sound.sampled.Clip;
 import javax.sound.sampled.DataLine;
 import javax.sound.sampled.LineUnavailableException;
 import javax.sound.sampled.UnsupportedAudioFileException;
+
+import java.io.BufferedWriter;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
-//<toplevel>
+import java.io.FileOutputStream;
+
 import com.microsoft.cognitiveservices.speech.*;
 import com.microsoft.cognitiveservices.speech.audio.*;
 import com.microsoft.cognitiveservices.speech.translation.*;
 
-//</toplevel>
-@SuppressWarnings("resource") // scanner
+
+@SuppressWarnings("resource") 
 public class TranslationSamples extends Parameters
 {
+	// output file
+	static BufferedWriter writer;
 	
-//Translation from microphone.
+	//Translation from microphone.
 	public static void translationWithMicrophoneAsync() throws InterruptedException, ExecutionException, IOException {
 //<TranslationWithMicrophoneAsync>
 //Creates an instance of a speech translation config with specified
@@ -117,49 +124,57 @@ public class TranslationSamples extends Parameters
 //</TranslationWithMicrophoneAsync>
 	}
 
-//Translation using file input.
-//<TranslationWithFileAsync>
+	//Translation using file input.
+	//<TranslationWithFileAsync>
 	private static Semaphore stopTranslationWithFileSemaphore;
 
-	public static void translationWithFileAsync() throws InterruptedException, ExecutionException {
+	public static void translationWithFileAsync() throws InterruptedException, ExecutionException, Exception {
+		
+		// output
+		writer = new BufferedWriter(new OutputStreamWriter(new FileOutputStream(output_folder + output_file), "utf-8"));
+		// Translated Result
+		Vector res_vec = new Vector();
+		
+		
 		stopTranslationWithFileSemaphore = new Semaphore(0);
-//Creates an instance of a speech translation config with specified
-//subscription key and service region. Replace with your own subscription key
-//and service region (e.g., "westus").
+		//Creates an instance of a speech translation config with specified
+		//subscription key and service region. Replace with your own subscription key
+		//and service region (e.g., "westus").
 		SpeechTranslationConfig config = SpeechTranslationConfig.fromSubscription(YourSubscriptionKey, YourServiceRegion);
 //Sets source and target languages
 		//String fromLanguage = "en-US";
 		config.setSpeechRecognitionLanguage(fromLanguage);
 		config.addTargetLanguage(tarLanguage);
-		//config.addTargetLanguage("fr");
+		
 //Creates a translation recognizer using file as audio input.
 //Replace with your own audio file name.
 		AudioConfig audioInput = AudioConfig.fromWavFileInput(YourAudioFile);
 		TranslationRecognizer recognizer = new TranslationRecognizer(config, audioInput);
 		{
-//Subscribes to events.
+			//Subscribes to events.
 			recognizer.recognizing.addEventListener((s, e) -> {
-				System.out.println("RECOGNIZING in '" + fromLanguage + "': Text=" + e.getResult().getText());
-				Map<String, String> map = e.getResult().getTranslations();
-				for (String element : map.keySet()) {
+//				System.out.println("RECOGNIZING in '" + fromLanguage + "': Text=" + e.getResult().getText());
+				Map<String, String> map = e.getResult().getTranslations();				
+				for (String element : map.keySet()) {					
 					System.out.println(" TRANSLATING into '" + element + "'': " + map.get(element));
+					res_vec.add(map.get(element));
 				}
 			});
-			recognizer.recognized.addEventListener((s, e) -> {
-				if (e.getResult().getReason() == ResultReason.TranslatedSpeech) {
-					System.out.println("RECOGNIZED in '" + fromLanguage + "': Text=" + e.getResult().getText());
-					Map<String, String> map = e.getResult().getTranslations();
-					for (String element : map.keySet()) {
-						System.out.println(" TRANSLATED into '" + element + "'': " + map.get(element));
-					}
-				}
-				if (e.getResult().getReason() == ResultReason.RecognizedSpeech) {
-					System.out.println("RECOGNIZED: Text=" + e.getResult().getText());
-					System.out.println(" Speech not translated.");
-				} else if (e.getResult().getReason() == ResultReason.NoMatch) {
-					System.out.println("NOMATCH: Speech could not be recognized.");
-				}
-			});
+//			recognizer.recognized.addEventListener((s, e) -> {
+//				if (e.getResult().getReason() == ResultReason.TranslatedSpeech) {
+////					System.out.println("RECOGNIZED in '" + fromLanguage + "': Text=" + e.getResult().getText());
+//					Map<String, String> map = e.getResult().getTranslations();
+//					for (String element : map.keySet()) {
+//						System.out.println(" TRANSLATED into '" + element + "'': " + map.get(element));
+//					}
+//				}
+//				if (e.getResult().getReason() == ResultReason.RecognizedSpeech) {
+//					System.out.println("RECOGNIZED: Text=" + e.getResult().getText());
+//					System.out.println(" Speech not translated.");
+//				} else if (e.getResult().getReason() == ResultReason.NoMatch) {
+//					System.out.println("NOMATCH: Speech could not be recognized.");
+//				}
+//			});
 			recognizer.canceled.addEventListener((s, e) -> {
 				System.out.println("CANCELED: Reason=" + e.getReason());
 				if (e.getReason() == CancellationReason.Error) {
@@ -175,19 +190,26 @@ public class TranslationSamples extends Parameters
 			});
 			recognizer.sessionStopped.addEventListener((s, e) -> {
 				System.out.println("\nSession stopped event.");
-//Stops translation when session stop is detected.
+				//Stops translation when session stop is detected.
 				System.out.println("\nStop translation.");
 				stopTranslationWithFileSemaphore.release();
 				;
 			});
-//Starts continuous recognition. Uses StopContinuousRecognitionAsync() to stop recognition.
+			//Starts continuous recognition. Uses StopContinuousRecognitionAsync() to stop recognition.
 			System.out.println("Start translation...");
 			recognizer.startContinuousRecognitionAsync().get();
-//Waits for completion.
+			//Waits for completion.
 			stopTranslationWithFileSemaphore.acquire();
 			;
-//Stops translation.
+			//Stops translation.
 			recognizer.stopContinuousRecognitionAsync().get();
+			
+			// output translated result
+			for(int i=0; i<res_vec.size(); i++) {
+				writer.write(res_vec.get(i)+"\n");
+			}
+			
+			writer.close();
 		}
 	}
 
@@ -264,4 +286,5 @@ public class TranslationSamples extends Parameters
 			recognizer.stopContinuousRecognitionAsync().get();
 		}
 	}
+
 }
